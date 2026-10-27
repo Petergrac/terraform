@@ -40,7 +40,7 @@ resource "aws_launch_configuration" "My_Instance" {
 # AWS ASG
 resource "aws_autoscaling_group" "name" {
   target_group_arns    = [aws_alb_target_group.asg.arn]
-  health_check_type = "ELB" # Default check is EC2, this one uses target group health checks
+  health_check_type    = "ELB" # Default check is EC2, this one uses target group health checks
   launch_configuration = aws_launch_configuration.My_Instance.id
   min_size             = 2
   max_size             = 10
@@ -90,6 +90,21 @@ resource "aws_alb_target_group" "asg" {
     timeout             = 3
     healthy_threshold   = 2
     unhealthy_threshold = 2
+  }
+}
+
+# Adding the listener rules
+resource "aws_lb_listener_rule" "asg" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 100
+  condition {
+    path_pattern {
+      values = ["*"]
+    }
+  }
+  action {
+    type             = "forward"
+    target_group_arn = aws_alb_target_group.asg.arn
   }
 }
 # SG specifically for the load balancer
