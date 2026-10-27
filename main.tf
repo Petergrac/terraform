@@ -1,14 +1,56 @@
-provider "aws"{
-	region = "af-south-1"
+provider "aws" {
+  region = "af-south-1"
+}
+
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd*/ubuntu-*-26.04-amd64-server-*"]
+  }
 }
 
 resource "aws_instance" "My_Instance" {
-  ami = "ami-01e13d903c268a58b"
-  instance_type = "t3.micro"
-  region = "af-south-1"
-  subnet_id = "subnet-05242796afb1250bf"
-  vpc_security_group_ids = ["sg-0d63e748ecda7c5d7"]
+  ami                         = data.aws_ami.ubuntu.id
+  instance_type               = "t3.micro"
+  vpc_security_group_ids      = [aws_security_group.instance.id]
+  user_data                   = <<-EOF
+			#! /bin/bash
+			echo "Hello World" > index.html
+			nohup busybox httpd -f -p ${var.server_port} &
+			EOF
+  user_data_replace_on_change = true
   tags = {
-	Name="terraform-example"
+    Name = "terraform-example"
   }
+}
+
+resource "aws_security_group" "instance" {
+  name = "My_Instance_SG"
+  ingress {
+    from_port   = var.server_port
+    to_port     = var.server_port
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # This CIDR allows IP of any range
+
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+variable "server_port" {
+  description = "The port the server will use for HTTP requests"
+  type        = number
+  default     = 8080
+}
+
+output "public_ip" {
+  description = "The public IP address of a web server"
+  value       = aws_instance.My_Instance.public_ip
 }
