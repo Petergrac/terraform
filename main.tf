@@ -22,29 +22,40 @@ data "aws_subnets" "default" {
   }
 }
 
-# AWS ASG launch configuration ==> It's immutable hence problematic during destroy
-resource "aws_launch_configuration" "My_Instance" {
-  image_id        = data.aws_ami.ubuntu
-  instance_type   = "t3.micro"
-  security_groups = [aws_security_group.instance.id]
-  user_data       = <<-EOF
-			#! /bin/bash
-			echo "Hello World" > index.html
-			nohup busybox httpd -f -p ${var.server_port} &
-			EOF
-  # Required when using a launch configuration with an autoscaling group.
+# Replaces aws_launch_configuration with a modern launch template
+resource "aws_launch_template" "My_Instance" {
+  name_prefix   = "my-instance-lt-"
+  image_id      = data.aws_ami.ubuntu.id
+  instance_type = "t3.micro"
+
+  network_interfaces {
+    associate_public_ip_address = true
+    security_groups             = [aws_security_group.instance.id]
+  }
+
+  user_data = base64encode(<<-EOF
+      #! /bin/bash
+      echo "Hello World" > index.html
+      nohup busybox httpd -f -p ${var.server_port} &
+      EOF
+  )
+
   lifecycle {
     create_before_destroy = true
   }
 }
 # AWS ASG
-resource "aws_autoscaling_group" "name" {
+resource "aws_autoscaling_group" "example" {
   target_group_arns    = [aws_alb_target_group.asg.arn]
   health_check_type    = "ELB" # Default check is EC2, this one uses target group health checks
-  launch_configuration = aws_launch_configuration.My_Instance.id
   min_size             = 2
   max_size             = 10
-  vpc_zone_identifier  = [data.aws_subnets.default.ids]
+  vpc_zone_identifier  = data.aws_subnets.default.ids
+  # Use launch_template block instead of launch_configuration attribute
+  launch_template {
+    id      = aws_launch_template.My_Instance.id
+    version = "$Latest"
+  }
   tag {
     key                 = "Name"
     value               = "terraform-asg-example"
@@ -146,7 +157,7 @@ variable "server_port" {
   default     = 8080
 }
 
-output "public_ip" {
-  description = "The public IP address of a web server"
-  value       = aws_instance.My_Instance.public_ip
+output "alb_dns_name" {
+  description = "The domain name of the load balancer"
+  value       = aws_lb.example.dns_name
 }
